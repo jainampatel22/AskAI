@@ -14,6 +14,7 @@ import type {
   FunctionReference,
 } from "convex/server";
 import type * as chats from "../chats.js";
+import type * as messages from "../messages.js";
 import type * as Schema from "../Schema.js";
 
 /**
@@ -26,6 +27,7 @@ import type * as Schema from "../Schema.js";
  */
 declare const fullApi: ApiFromModules<{
   chats: typeof chats;
+  messages: typeof messages;
   Schema: typeof Schema;
 }>;
 export declare const api: FilterApi<

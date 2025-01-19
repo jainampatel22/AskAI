@@ -14,7 +14,7 @@ function ChatRow({
     const router = useRouter()
     const {closeMobileNav } = use(NavigateContext)
     const handleClick = ()=>{
-        router.push(`/dashboard/chat${chat._id}`)
+        router.push(`/dashboard/chat/${chat._id}`)
         closeMobileNav( )
     }
     return (
