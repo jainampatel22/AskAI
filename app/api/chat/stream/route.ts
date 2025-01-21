@@ -5,7 +5,7 @@ import { auth } from "@clerk/nextjs/server";
 import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
 import { getConvexClient } from "@/lib/Convex";
 import {
-  chatRequestBody,
+  ChatRequestBody,
   StreamMessage,
   StreamMessageType,
   SSE_DATA_PREFIX,
@@ -34,7 +34,7 @@ export async function POST(req: Request) {
     }
 
     const { messages, newMessage, chatId } =
-      (await req.json()) as chatRequestBody;
+      (await req.json()) as ChatRequestBody;
     const convex = getConvexClient();
 
     // Create stream with larger queue strategy for better performance
@@ -78,7 +78,7 @@ export async function POST(req: Request) {
 
           // Process the events
           for await (const event of eventStream) {
-            // console.log("🔄 Event:", event);
+            console.log("🔄 Event:", event);
 
             if (event.event === "on_chat_model_stream") {
               const token = event.data.chunk;
@@ -110,6 +110,8 @@ export async function POST(req: Request) {
           }
 
           // Send completion message without storing the response
+          console.log("Sending Done message");
+
           await sendSSEMessage(writer, { type: StreamMessageType.Done });
         } catch (streamError) {
           console.error("Error in event stream:", streamError);

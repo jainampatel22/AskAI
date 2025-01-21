@@ -3,14 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Doc, Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
-import { chatRequestBody, StreamMessageType } from "@/lib/type"
+import { ChatRequestBody, StreamMessageType } from "@/lib/type"
 import { createSSEParser } from "@/lib/createSSEParser";
 import { MessageBubble } from "@/components/MessageBubble";
 import { ArrowRight } from "lucide-react";
 import { getConvexClient } from "@/lib/Convex";
 import { api } from "@/convex/_generated/api";
 
-interface chatInterfaceProps {
+interface ChatInterfaceProps {
   chatId: Id<"chats">;
   initialMessages: Doc<"messages">[];
 }
@@ -18,7 +18,7 @@ interface chatInterfaceProps {
 export default function ChatInterface({
   chatId,
   initialMessages,
-}: chatInterfaceProps) {
+}: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Doc<"messages">[]>(initialMessages);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -106,7 +106,7 @@ export default function ChatInterface({
 
     try {
       // Prepare chat history and new message for API
-      const requestBody: chatRequestBody = {
+      const requestBody: ChatRequestBody = {
         messages: messages.map((msg) => ({
           role: msg.role,
           content: msg.content,
@@ -189,27 +189,35 @@ export default function ChatInterface({
               }
               break;
 
-            case StreamMessageType.Done:
-              // Handle completion of the entire response
-              const assistantMessage: Doc<"messages"> = {
-                  _id: `temp_assistant_${Date.now()}`,
+              case StreamMessageType.Done:
+                // Handle completion of the entire response
+                const assistantMessage: Doc<"messages"> = {
+                  _id: `temp${Date.now()}`,
                   chatId,
                   content: fullResponse,
                   role: "Agent",
                   createdAt: Date.now(),
-              } as unknown as Doc<"messages">;
-
-              // Save the complete message to the database
-              const convex = getConvexClient();
-              await convex.mutation(api.messages.store, {
-                chatId,
-                content: fullResponse,
-                role: "Agent",
-              });
-
-              setMessages((prev) => [...prev, assistantMessage]);
-              setStreamedResponse("");
-              return;
+                } as Doc<"messages">;
+              
+                // Log the full response before saving
+                console.log("Full response to be stored:", fullResponse);
+              
+                // Save the complete message to the database
+                const convex = getConvexClient();
+                try {
+                  await convex.mutation(api.messages.store, {
+                    chatId,
+                    content: fullResponse,
+                    role: "Agent",
+                  });
+                  // Update messages state with the assistant's message
+                  setMessages((prev) => [...prev, assistantMessage]);
+                } catch (error) {
+                  console.error("Error saving message to Convex:", error);
+                }
+              
+                setStreamedResponse("");
+                return;
           }
         }
       });
