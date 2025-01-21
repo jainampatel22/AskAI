@@ -169,7 +169,7 @@ function shouldContinue(state: typeof MessagesAnnotation.State) {
     const checkpointer = new MemorySaver();
     const app = workflow.compile({ checkpointer });
   
-    const stream = await app.streamEvents(
+    const stream =  app.streamEvents(
       { messages: cachedMessages },
       {
         version: "v2",

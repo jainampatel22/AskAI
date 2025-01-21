@@ -1,17 +1,20 @@
-import { api } from "@/convex/_generated/api";
-import { getConvexClient } from "@/lib/Convex";
 import { submitQuestion } from "@/lib/langgraph";
-import { 
-  chatRequestBody, 
-  SSE_DATA_PREFIX, 
-  SSE_LINE_DELIMITER, 
-  StreamMessage, 
-  StreamMessageType 
-} from "@/lib/type";
+import { api } from "@/convex/_generated/api";
+import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
+import { getConvexClient } from "@/lib/Convex";
+import {
+  chatRequestBody,
+  StreamMessage,
+  StreamMessageType,
+  SSE_DATA_PREFIX,
+  SSE_LINE_DELIMITER,
+} from "@/lib/type";
 
-async function SendSseMessage(
+export const runtime = "edge";
+
+function sendSSEMessage(
   writer: WritableStreamDefaultWriter<Uint8Array>,
   data: StreamMessage
 ) {
@@ -24,137 +27,121 @@ async function SendSseMessage(
 }
 
 export async function POST(req: Request) {
-  let writer = new TransformStream().writable.getWriter();
-  
   try {
     const { userId } = await auth();
     if (!userId) {
       return new Response("Unauthorized", { status: 401 });
     }
 
-    const body = (await req.json()) as chatRequestBody;
-    const { message, newMessage, chatId } = body;
+    const { messages, newMessage, chatId } =
+      (await req.json()) as chatRequestBody;
     const convex = getConvexClient();
 
-    // Create stream with higher buffer for better performance
-    const stream = new TransformStream({}, { highWaterMark: 1024 * 16 });
-    writer = stream.writable.getWriter();
+    // Create stream with larger queue strategy for better performance
+    const stream = new TransformStream({}, { highWaterMark: 1024 });
+    const writer = stream.writable.getWriter();
 
     const response = new Response(stream.readable, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Connection": "keep-alive",
-        "Cache-Control": "no-cache",
-        "X-Accel-Buffering": "no"
-      }
+        headers: {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
     });
 
-    // Start processing in background
+    // Handle the streaming response
     (async () => {
       try {
-        // Send connected message
-        await SendSseMessage(writer, { type: StreamMessageType.Connected });
+        // Send initial connection established message
+        await sendSSEMessage(writer, { type: StreamMessageType.Connected });
 
-        // Save message to Convex
+        // Send user message to Convex
         await convex.mutation(api.messages.send, {
           chatId,
-          content: newMessage
+          content: newMessage,
         });
 
-        // Prepare messages for LangChain
-        const langMessages = [
-          ...message.map((msg) =>
-            msg.role === 'user' 
-              ? new HumanMessage(msg.content) 
-              : new AIMessage(msg.content)
-          ),
-          new HumanMessage(newMessage)
-        ];
+        // Convert messages to LangChain format
+        const langChainMessages = [
+            ...(Array.isArray(messages) ? messages.map((msg) =>
+              msg.role === "user"
+                ? new HumanMessage(msg.content)
+                : new AIMessage(msg.content)
+            ) : []), // if messages is not an array, provide an empty array
+            new HumanMessage(newMessage),
+          ];
 
-        // Process stream
-        const eventStream = await submitQuestion(langMessages, chatId);
-        
-        let hasError = false;
-        for await (const event of eventStream) {
-          if (hasError) break;
+        try {
+          // Create the event stream
+          const eventStream = await submitQuestion(langChainMessages, chatId);
 
-          try {
-            switch (event.event) {
-              case "on_chat_model_stream":
-                const token = event.data.chunk;
-                if (token) {
-                  const text = token.content.at(0)?.['text'];
-                  if (text) {
-                    await SendSseMessage(writer, {
-                      type: StreamMessageType.Token,
-                      token: text
-                    });
-                  }
+          // Process the events
+          for await (const event of eventStream) {
+            // console.log("🔄 Event:", event);
+
+            if (event.event === "on_chat_model_stream") {
+              const token = event.data.chunk;
+              if (token) {
+                // Access the text property from the AIMessageChunk
+                const text = token.content.at(0)?.["text"];
+                if (text) {
+                  await sendSSEMessage(writer, {
+                    type: StreamMessageType.Token,
+                    token: text,
+                  });
                 }
-                break;
+              }
+            } else if (event.event === "on_tool_start") {
+              await sendSSEMessage(writer, {
+                type: StreamMessageType.ToolStart,
+                tool: event.name || "unknown",
+                input: event.data.input,
+              });
+            } else if (event.event === "on_tool_end") {
+              const toolMessage = new ToolMessage(event.data.output);
 
-              case "on_tool_start":
-                await SendSseMessage(writer, {
-                  type: StreamMessageType.ToolStart,
-                  tool: event.name || "unknown",
-                  input: event.data.input
-                });
-                break;
-
-              case "on_tool_end":
-                const toolMessage = new ToolMessage(event.data.input);
-                await SendSseMessage(writer, {
-                  type: StreamMessageType.ToolEnd,
-                  tool: toolMessage.lc_kwargs.name || "unknown",
-                  output: event.data.output
-                });
-                break;
+              await sendSSEMessage(writer, {
+                type: StreamMessageType.ToolEnd,
+                tool: toolMessage.lc_kwargs.name || "unknown",
+                output: event.data.output,
+              });
             }
-          } catch (eventError) {
-            console.error("Error processing event:", eventError);
-            hasError = true;
-            await SendSseMessage(writer, {
-              type: StreamMessageType.Error,
-              error: eventError instanceof Error ? eventError.message : "Error processing event"
-            });
           }
-        }
 
-        if (!hasError) {
-          await SendSseMessage(writer, { type: StreamMessageType.Done });
+          // Send completion message without storing the response
+          await sendSSEMessage(writer, { type: StreamMessageType.Done });
+        } catch (streamError) {
+          console.error("Error in event stream:", streamError);
+          await sendSSEMessage(writer, {
+            type: StreamMessageType.Error,
+            error:
+              streamError instanceof Error
+                ? streamError.message
+                : "Stream processing failed",
+          });
         }
-
       } catch (error) {
-        console.error("Stream processing error:", error);
-        await SendSseMessage(writer, {
+        console.error("Error in stream:", error);
+        await sendSSEMessage(writer, {
           type: StreamMessageType.Error,
-          error: error instanceof Error ? error.message : "Stream processing failed"
+          error: error instanceof Error ? error.message : "Unknown error",
         });
       } finally {
         try {
           await writer.close();
-        } catch (closingError) {
-          console.error("Error closing writer:", closingError);
+        } catch (closeError) {
+          console.error("Error closing writer:", closeError);
         }
       }
     })();
 
     return response;
-
   } catch (error) {
-    console.error("API route error:", error);
-    try {
-      await SendSseMessage(writer, {
-        type: StreamMessageType.Error,
-        error: error instanceof Error ? error.message : "Unknown error occurred"
-      });
-      await writer.close();
-    } catch (finalError) {
-      console.error("Error sending final error message:", finalError);
-    }
-    return new Response(JSON.stringify({ error: "Internal Server Error" }), { 
-      status: 500,
-      headers: { "Content-Type": "application/json" }
-    });
+    console.error("Error in chat API:", error);
+    return NextResponse.json(
+      { error: "Failed to process chat request" } as const,
+      { status: 500 }
+    );
   }
 }

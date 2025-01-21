@@ -1,0 +1,12 @@
+schema
+  @sdl(
+    files: [
+      "google_books/index.graphql"
+      "tools.graphql"
+      "wikipedia/index.graphql"
+      "youtube_transcript/index.graphql"
+      "curl/index.graphql"
+    ]
+  ) {
+  query: Query
+}
