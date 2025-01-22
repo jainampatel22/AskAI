@@ -191,16 +191,19 @@ export default function ChatInterface({
 
               case StreamMessageType.Done:
                 // Handle completion of the entire response
+                
+                console.log("Full response to be stored:", fullResponse);
                 const assistantMessage: Doc<"messages"> = {
                   _id: `temp${Date.now()}`,
                   chatId,
                   content: fullResponse,
                   role: "Agent",
                   createdAt: Date.now(),
-                } as Doc<"messages">;
+                } as Doc<"messages">;  
+                console.log("Assistant message structure:", assistantMessage);
+
               
                 // Log the full response before saving
-                console.log("Full response to be stored:", fullResponse);
               
                 // Save the complete message to the database
                 const convex = getConvexClient();
@@ -216,9 +219,10 @@ export default function ChatInterface({
                   console.error("Error saving message to Convex:", error);
                 }
               
-                setStreamedResponse("");
+                
                 return;
           }
+          setStreamedResponse('')
         }
       });
     } catch (error) {

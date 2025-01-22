@@ -35,7 +35,8 @@ import {
   
           // Handle done message
           if (data === SSE_DONE_MESSAGE) {
-            console.log("Parsed Done message"); // Log when Done message is parsed
+            console.log("Parsed Done message"); 
+            console.log("Final response to be sent:", data);// Log when Done message is parsed
             return { type: StreamMessageType.Done };
           }
   
