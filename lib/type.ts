@@ -68,3 +68,7 @@ export interface ChatRequestBody {
   newMessage: string;
   chatId: Id<"chats">;
 }
+interface StreamEvent {
+  type: string;
+  data: any; // Adjust this according to your actual data structure
+}
