@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Doc, Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
-import { ChatRequestBody, StreamMessageType } from "@/lib/type"
+import { ChatRequestBody, StreamMessageType } from "@/lib/type";
+
 import { createSSEParser } from "@/lib/createSSEParser";
 import { MessageBubble } from "@/components/MessageBubble";
 import { ArrowRight } from "lucide-react";
@@ -189,40 +190,28 @@ export default function ChatInterface({
               }
               break;
 
-              case StreamMessageType.Done:
-                // Handle completion of the entire response
-                
-                console.log("Full response to be stored:", fullResponse);
-                const assistantMessage: Doc<"messages"> = {
-                  _id: `temp${Date.now()}`,
-                  chatId,
-                  content: fullResponse,
-                  role: "Agent",
-                  createdAt: Date.now(),
-                } as Doc<"messages">;  
-                console.log("Assistant message structure:", assistantMessage);
+            case StreamMessageType.Done:
+              // Handle completion of the entire response
+              const assistantMessage: Doc<"messages"> = {
+                _id: `temp_assistant_${Date.now()}`,
+                chatId,
+                content: fullResponse,
+                role: "Agent",
+                createdAt: Date.now(),
+              } as Doc<"messages">;
 
-              
-                // Log the full response before saving
-              
-                // Save the complete message to the database
-                const convex = getConvexClient();
-                try {
-                  await convex.mutation(api.messages.store, {
-                    chatId,
-                    content: fullResponse,
-                    role: "Agent",
-                  });
-                  // Update messages state with the assistant's message
-                  setMessages((prev) => [...prev, assistantMessage]);
-                } catch (error) {
-                  console.error("Error saving message to Convex:", error);
-                }
-              
-                
-                return;
+              // Save the complete message to the database
+              const convex = getConvexClient();
+              await convex.mutation(api.messages.store, {
+                chatId,
+                content: fullResponse,
+                role: "Agent",
+              });
+
+              setMessages((prev) => [...prev, assistantMessage]);
+              setStreamedResponse("");
+              return;
           }
-          setStreamedResponse('')
         }
       });
     } catch (error) {
@@ -249,7 +238,7 @@ export default function ChatInterface({
       {/* Messages container */}
       <section className="flex-1 overflow-y-auto bg-gray-50 p-2 md:p-0">
         <div className="max-w-4xl mx-auto p-4 space-y-3">
-          {/* {messages?.length === 0 && <WelcomeMessage />} */}
+         
 
           {messages?.map((message: Doc<"messages">) => (
             <MessageBubble

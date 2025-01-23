@@ -42,12 +42,12 @@ export async function POST(req: Request) {
     const writer = stream.writable.getWriter();
 
     const response = new Response(stream.readable, {
-        headers: {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        }
+      headers: {
+        "Content-Type": "text/event-stream",
+        // "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no", // Disable buffering for nginx which is required for SSE to work properly
+      },
     });
 
     // Handle the streaming response
@@ -64,13 +64,13 @@ export async function POST(req: Request) {
 
         // Convert messages to LangChain format
         const langChainMessages = [
-            ...(Array.isArray(messages) ? messages.map((msg) =>
-              msg.role === "user"
-                ? new HumanMessage(msg.content)
-                : new AIMessage(msg.content)
-            ) : []), // if messages is not an array, provide an empty array
-            new HumanMessage(newMessage),
-          ];
+          ...messages.map((msg) =>
+            msg.role === "user"
+              ? new HumanMessage(msg.content)
+              : new AIMessage(msg.content)
+          ),
+          new HumanMessage(newMessage),
+        ];
 
         try {
           // Create the event stream
@@ -78,7 +78,7 @@ export async function POST(req: Request) {
 
           // Process the events
           for await (const event of eventStream) {
-            console.log("🔄 Event:", event);
+            // console.log("🔄 Event:", event);
 
             if (event.event === "on_chat_model_stream") {
               const token = event.data.chunk;
@@ -110,8 +110,6 @@ export async function POST(req: Request) {
           }
 
           // Send completion message without storing the response
-          console.log("Sending Done message");
-
           await sendSSEMessage(writer, { type: StreamMessageType.Done });
         } catch (streamError) {
           console.error("Error in event stream:", streamError);
